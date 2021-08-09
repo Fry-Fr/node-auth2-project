@@ -1,6 +1,9 @@
 const router = require("express").Router();
 const { checkUsernameExists, validateRoleName } = require('./auth-middleware');
 const { JWT_SECRET } = require("../secrets"); // use this secret!
+const tokenBuilder = require('./tokenBuilder');
+const Model = require('../users/users-model');
+const bcrypt = require('bcryptjs');
 
 router.post("/register", validateRoleName, (req, res, next) => {
   /**
@@ -13,7 +16,17 @@ router.post("/register", validateRoleName, (req, res, next) => {
       "username": "anna",
       "role_name": "angel"
     }
-   */
+   */    
+    const rounds = process.env.BCRYPT_ROUNDS || 10;
+    const hash = bcrypt.hashSync(req.body.password, rounds);
+
+    req.body.password = hash;
+
+    Model.add(req.body)
+      .then(([registeredUser]) => {
+        res.status(201).json(registeredUser)
+      })
+      .catch(err => next(err))
 });
 
 
@@ -37,6 +50,23 @@ router.post("/login", checkUsernameExists, (req, res, next) => {
       "role_name": "admin" // the role of the authenticated user
     }
    */
+
+    const { username, password } = req.body;
+
+    Model.findBy({ username })
+      .then(([user]) => {
+        if (user && bcrypt.compareSync(password, user.password)) {
+          const token = tokenBuilder(user);
+
+          res.status(200).json({
+            message: `${user.username} is back!`,
+            token: token,
+          })
+        }else {
+          next({ status: 401, message: 'Invalid credentials' })
+        }
+      })
+      .catch(err => next(err))
 });
 
 module.exports = router;
